@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adbdevice"
+dynamic = ["version"]
+description = 'Wrappers for controlling hw/emu adb devices from python scripts.'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "Felix Leopold Kehrer", email = "felix.kehrer@tuwien.ac.at" },
+  { name = "Jakob", email = "git@themoep.at" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+    "sh",
+    "click",
+    "lxml"
+]
+
+[project.optional-dependencies]
+development = [
+    "nox",
+]
+all = [ 
+    "adbdevice[development]",
+] 
+
+[project.urls]
+Documentation = "https://github.com/unknown/adbdevice#readme"
+Issues = "https://github.com/unknown/adbdevice/issues"
+Source = "https://github.com/unknown/adbdevice"
+
+[tool.hatch.version]
+path = "src/adbdevice/__about__.py"
+
+[tool.hatch.envs.default]
+dependencies = [
+  "coverage[toml]>=6.5",
+  "pytest",
+]
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+test-cov = "coverage run -m pytest {args:tests}"
+cov-report = [
+  "- coverage combine",
+  "coverage report",
+]
+cov = [
+  "test-cov",
+  "cov-report",
+]
+
+[[tool.hatch.envs.all.matrix]]
+python = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+[tool.hatch.envs.types]
+dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/adbdevice tests}"
+
+[tool.coverage.run]
+source_pkgs = ["adbdevice", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/adbdevice/__about__.py",
+]
+
+[tool.coverage.paths]
+adbdevice = ["src/adbdevice", "*/adbdevice/src/adbdevice"]
+tests = ["tests", "*/adbdevice/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+target-version = "py310"
+lint.select = [
+  "E", "F", "W", # flake8
+  "B", "B904",   # flake8-bugbear
+  "I",           # isort
+  "C4",          # flake8-comprehensions
+  "ICN",         # flake8-import-conventions
+  "ISC",         # flake8-implicit-str-concat
+  "PGH",         # pygrep-hooks
+  "PIE",         # flake8-pie
+  "RUF",         # Ruff-specific
+  "SIM",         # flake8-simplify
+  "UP",          # pyupgrade
+  "YTT",         # flake8-2020
+]
+extend-exclude = [
+  "experiments/*",
+  "external/*",
+  "htmlcov/*",
+]
+lint.extend-ignore = [
+  "E501",
+]
+extend-include = [
+  "pyproject.toml", 
+  "*.ipynb"
+]

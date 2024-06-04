@@ -1,0 +1,6 @@
+[submodule "dependencies/droidbot"]
+	path = dependencies/droidbot
+	url = https://github.com/honeynet/droidbot
+[submodule "dependencies/acvtool"]
+	path = dependencies/acvtool
+	url = https://github.com/pilgun/acvtool

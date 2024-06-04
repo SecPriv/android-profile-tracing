@@ -1,0 +1,65 @@
+diff --git i/requirements.txt w/requirements.txt
+index 7028f54..b21060f 100644
+--- i/requirements.txt
++++ w/requirements.txt
+@@ -5,4 +5,5 @@ javaobj-py3==0.4.4
+ six==1.12.0
+ androguard==4.0.2
+ pyaxml==0.0.5
+-typing_extensions==4.7.1
+\ No newline at end of file
++typing_extensions==4.7.1
++protobuf==5.27.0
+diff --git i/smiler/config.json w/smiler/config.json
+index ca0421c..65694c0 100644
+--- i/smiler/config.json
++++ w/smiler/config.json
+@@ -1,6 +1,6 @@
+ {
+-  "AAPT": "aapt_path",
+-  "ZIPALIGN": "zipalign_path",
+-  "ADB": "adb_path",
+-  "APKSIGNER": "apksigner_path"
+-}
+\ No newline at end of file
++  "AAPT": "/home/jakob/android/sdk/build-tools/34.0.0/aapt",
++  "ZIPALIGN": "/home/jakob/android/sdk/build-tools/34.0.0/zipalign",
++  "ADB": "/home/jakob/android/sdk/platform-tools/adb",
++  "APKSIGNER": "/home/jakob/android/sdk/build-tools/34.0.0/apksigner"
++}
+diff --git i/smiler/entities/coverage.py w/smiler/entities/coverage.py
+index 6ed43f4..738cad8 100644
+--- i/smiler/entities/coverage.py
++++ w/smiler/entities/coverage.py
+@@ -20,7 +20,7 @@ class CoverageData(object):
+     @staticmethod
+     def coverage(covered, coverable):
+         if coverable == 0:
+-            return None
++            return -1 # if none the whole reporting falls apart
+         return float(covered) / coverable
+ 
+     def get_class_coverage(self):
+diff --git i/smiler/operations/terminal.py w/smiler/operations/terminal.py
+index 9931206..001f512 100644
+--- i/smiler/operations/terminal.py
++++ w/smiler/operations/terminal.py
+@@ -12,4 +12,4 @@ def request_pipe(cmd):
+         raise Exception("----------------------------------------------------\n\
+ Out: {}\nError: {}".format(out, err))
+ 
+-    return res.decode("ascii")
++    return res.decode(encoding='utf-8', errors='backslashreplace')
+diff --git i/smiler/smiler.py w/smiler/smiler.py
+index beb0d75..b599608 100644
+--- i/smiler/smiler.py
++++ w/smiler/smiler.py
+@@ -168,7 +168,7 @@ def start_instrumenting(package, release_thread=False, onstop=None, timeout=None
+ def sdcard_path_exists(path):
+     cmd = "{} shell \"test -e /sdcard/Download/{} > /dev/null 2>&1 && echo \'1\' || echo \'0\'\"".format(config.adb_path, path)
+     logging.debug('Command to check lock file:' + cmd)
+-    locked = subprocess.check_output(cmd, shell=True).replace("\n","").replace("\r", "")
++    locked = subprocess.check_output(cmd, shell=True).decode(encoding='utf-8', errors='backslashreplace').replace("\n","").replace("\r", "")
+     return locked == '1'
+ 
+ 
