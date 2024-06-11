@@ -1,4 +1,4 @@
-# android-profile-tracing
+# android-tracing
 
 we are continuously extending this repository, some parts are not yet anonymized.
 
@@ -15,7 +15,7 @@ This repository contains two python projects in `src/`:
         - starts emulator if asked to
         - installs apps from .apk + .dm if asked to
         - calculates offsets in .oat files
-        - prepares and starts tracing script
+        - prepares and starts tracing using uprobe events for a given list of offsets
         - runs baseline/monkey/droidbot experiment
         - collects results
         - cleans up if asked to
@@ -32,4 +32,4 @@ The `dependencies` folder contains external dependencies that are not automatica
     a. apply the acvtool patch
 4. run `aproftracer --help` to get an overview of functionality
 
-The downloaded is in `experiments/daily_apk_dm_scrape/`.
+The downloader is in `experiments/daily_apk_dm_scrape/`.
