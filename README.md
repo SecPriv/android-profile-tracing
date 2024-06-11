@@ -1,7 +1,5 @@
 # android-tracing
 
-we are continuously extending this repository, some parts are not yet anonymized.
-
 ## overview
 
 This repository contains two python projects in `src/`: 
@@ -22,7 +20,7 @@ This repository contains two python projects in `src/`:
 
 The `experiments` folder contains Makefiles to run experiments, including downloading apps and cloud profiles. 
 
-The `dependencies` folder contains external dependencies that are not automatically installed.
+The `dependencies` folder contains external dependencies that are not automatically installed. Install with `git submodule update --init`. To get acvtool running apply the patch with `cd dependencies/acvtool && git apply --stat ../acvtool.patch`.
 
 ## setup
 
