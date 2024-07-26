@@ -15,9 +15,9 @@ downloadDelay = 1000
 simultaneousDownloads = 10
 # apkeep
 sleepDuration = 10000  # ms
-parallel = 1
-googleAccount = "downloadingprofiles@gmail.com"
-googlePassword = "srxuxdvywqassfva"
+ubarallel = 1
+googleAccount = "CHANGEME"
+googlePassword = "CHANGEME"
 
 # LOCAL DIRECTORY PATHS
 date = str(date.today())
