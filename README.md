@@ -20,7 +20,7 @@ This repository contains two python projects in `src/`:
 
 The `experiments` folder contains Makefiles to run experiments, including downloading apps and cloud profiles. 
 
-The `dependencies` folder contains external dependencies that are not automatically installed. Install with `git submodule update --init`. To get acvtool running apply the patch with `cd dependencies/acvtool && git apply --stat ../acvtool.patch`.
+The `dependencies` folder contains external dependencies that are not automatically installed. Install with `git submodule update --init`. Because the tools need patches, see the [dependencies/README.md] for more info.
 
 ## setup
 
