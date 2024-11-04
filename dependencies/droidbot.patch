@@ -1,0 +1,33 @@
+diff --git i/droidbot/adapter/droidbot_app.py w/droidbot/adapter/droidbot_app.py
+index 83fd93d..bc0d2da 100644
+--- i/droidbot/adapter/droidbot_app.py
++++ w/droidbot/adapter/droidbot_app.py
+@@ -147,7 +147,8 @@ class DroidBotAppConn(Adapter):
+             if self.check_connectivity():
+                 traceback.print_exc()
+                 # clear self.last_acc_event
+-                self.logger.warning("Restarting droidbot app")
++                self.logger.warning("Restarting droidbot app in 1s")
++                time.sleep(1)
+                 self.last_acc_event = None
+                 self.disconnect()
+                 self.connect()
+diff --git i/setup.py w/setup.py
+index 2a18c5c..7436f90 100644
+--- i/setup.py
++++ w/setup.py
+@@ -34,12 +34,12 @@ setup(
+     ],
+     entry_points={
+         'console_scripts': [
+-            'droidbot=start:main',
++            'droidbot=droidbot.start:main',
+         ],
+     },
+     package_data={
+         'droidbot': [os.path.relpath(x, 'droidbot') for x in findall('droidbot/resources/')]
+     },
+     # androidviewclient doesnot support pip install, thus you should install it with easy_install
+-    install_requires=['androguard>=3.4.0a1', 'networkx', 'Pillow'],
++    install_requires=['androguard==3.4.0a1', 'networkx', 'Pillow'],
+ )

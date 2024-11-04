@@ -3,4 +3,7 @@
 	url = https://github.com/honeynet/droidbot
 [submodule "dependencies/acvtool"]
 	path = dependencies/acvtool
-	url = https://github.com/pilgun/acvtool
+    url = https://github.com/pilgun/acvtool
+[submodule "dependencies/fastbot"]
+	path = dependencies/fastbot
+	url = https://github.com/bytedance/Fastbot_Android.git

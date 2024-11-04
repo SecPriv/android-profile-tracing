@@ -1,0 +1,114 @@
+METADIR=_parallel_meta
+
+DEVICEID_P8_GENIUS=3A121FDJH00BT3
+DEVICEID_P8_CAFFEINATED=38270DLJH004Q0
+DEVICEID_P8_COOL=38091FDJH00PDT
+DEVICEID_P8_PIONEER=39281FDJH006XT
+
+#This is relative to e.g. ./profcov/time/Makefile
+APKS_DMS_DIR=../../../__data/experiments-2024-10/apps-2024-10-11/
+
+# defaults for run
+INPUTCSV=../../../app_selection/apps_that_we_have_and_run_on_droidbot.csv
+DURATION=600
+MAXPROBES=30000
+
+default:
+	echo "hi"
+
+# expects:
+# - METADIR
+# - JOBNAME
+# - INPUTCSV
+# - DEVICEID
+# - TOOL
+# - MAXPROBES
+# - DURATION
+# - APKS_DMS_DIR
+# - EXTRA_ARGS
+--run-tool:
+	mkdir -p $(METADIR)
+	date | sed -e "s/^/Start: /" | tee -a $(METADIR)/$(JOBNAME).startend
+	cat $(INPUTCSV) | parallel \
+		-j1 \
+		--joblog $(METADIR)/$(JOBNAME).joblog \
+		--resume \
+		--eta \
+		--results $(METADIR)/$(JOBNAME).results/ \
+		'/usr/bin/time -v nice -n 5 -- choom -n 1000 -- aproftracer {} --verbose --device-id $(DEVICEID) --fresh-install $(APKS_DMS_DIR)/{} --max-probes $(MAXPROBES) --tool $(TOOL) --tool-max-runtime $(DURATION) --result-dir results_$(JOBNAME) --also-startup-poststartup --buffer-size-kb 512 $(EXTRA_ARGS)' || true 
+	date | sed -e "s/^/End: /" | tee -a $(METADIR)/$(JOBNAME).startend
+
+
+# expects:
+# - METADIR
+# - JOBNAME
+--stats-generic:
+	@echo -n "result-dirs: "
+	@ls results_$(JOBNAME)/ | wc -l
+	@echo -n "+ result.pickles: "
+	@find results_$(JOBNAME)/ -name "result.pickle" | wc -l
+	@echo -n "- generic exceptions: "
+	@grep -r "generic exception caught" $(METADIR)/$(JOBNAME).results/ | wc -l
+	@echo -n "- timeout probes: "
+	@grep -r "NotImplementedError: setting up tracer probes took more than" $(METADIR)/$(JOBNAME).results/ | wc -l
+
+
+# expects:
+# - METADIR
+# - JOBNAME
+ifeq ($(JOBNAME),)
+fix-meta-results:
+	@echo "if a phone drops off the usb or another irrecoverable error happens, all remaining apps will fail to be analyzed"
+	@echo "to rerun their analysis, remove them from the joblog and clean up the parallel result dirs"
+	@echo "this is necessary because of a bug in parallel where using --joblog and --results won't run --retry correctly without manual cleanup"
+	@echo "jobname not set, run with 'export JOBNAME=name; make fix-meta-results'"
+else
+fix-meta-results: --check_fix_ok
+	@echo "running removal of joblog results that need to be re-run"
+	for pth in $(METADIR)/$(JOBNAME).results/1/*; do \
+		ID=`echo $$pth | cut -d '/' -f 4`; \
+		if grep -wq "$$ID" $(METADIR)/$(JOBNAME).joblog; then \
+			echo "in joblog: $$ID"; \
+		else \
+			echo "not in joblog, removing: $$ID"; \
+			rm -r $$pth; \
+		fi; \
+	done
+
+endif
+
+--check_fix_ok:
+	@echo "jobname is: $(JOBNAME)"
+	@echo "have you removed the bottom lines from $(METADIR)/$(JOBNAME).joblog that you want to re-run?"
+	@echo "continuing will remove all folders in $(METADIR)/$(JOBNAME).results/1/ that are not in the joblog"
+	@echo -n "I have removed the bottom lines of the mentioned joblog [y/N] " && read ans && [ $${ans:-N} = y ]
+
+# sometimes the experiments fail for reasons out of scope (oomkiller, segfault in fucking adb)
+# cleaning this up should be done automatic to restart the failed ones only, but the failuremodes are always new and interesting
+# so this is a scratchpad of attempts
+# for the last oopsie we decided to just re-run them tho, so this is all commented out
+#
+## expects:
+## - METADIR
+## - JOBNAME
+#profcov_ids_in_joblog_ok.csv:
+#	cat $(METADIR)/$(JOBNAME).joblog | cut -f 7,9 | sed -e 's/\t/ /' | cut -d ' ' -f 1,13 | tail -n +2 > profcov_ids_in_joblog_ok.csv
+#	# note: the -f  13 needs adjustment according to the invocation of aproftracer above
+#
+## expects:
+## - METADIR
+## - JOBNAME
+#clean-up-joblog: profcov_ids_in_joblog_ok.csv
+#	for pth in $(METADIR)/$(JOBNAME).results/1/*; do ID=`echo $$pth | cut -d '/' -f 4`; if grep -wq "$$ID" profcov_ids_in_joblog_ok.csv; then echo $$ID "in joblog"; else rm -r $$pth; fi; done
+#
+#helper-clean-up:
+#	@echo "so oomkiller killed a process or something."
+#	@echo "parallel has a bug where using --joblog and --results with --retry"
+#	@echo "  will skip re-running jobs when their results folder exists, so"
+#	@echo "  they are also missing in the joblog. to fix this, run:"
+#	@echo "1. \$$ make profcov_ids_in_joblog_ok.csv"
+#	@echo "2. then check which existing result dirs failed "
+#	@echo " \$$ export JOBNAME=xxx; diff <(ls -l _parallel_meta/\$$JOBNAME.results/1/ | choose 8) <(cat _parallel_meta/\$$JOBNAME.joblog | choose 19 | sort)"
+#	@echo "then remove the results folders and rerun the target"
+#
+#

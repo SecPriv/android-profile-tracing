@@ -1,3 +1,10 @@
+diff --git i/.python-version w/.python-version
+new file mode 100644
+index 0000000..37ca8f4
+--- /dev/null
++++ w/.python-version
+@@ -0,0 +1 @@
++acvtool-dev
 diff --git i/requirements.txt w/requirements.txt
 index 7028f54..b21060f 100644
 --- i/requirements.txt
@@ -10,6 +17,25 @@ index 7028f54..b21060f 100644
 \ No newline at end of file
 +typing_extensions==4.7.1
 +protobuf==5.27.0
+diff --git i/setup.py w/setup.py
+index 06032c2..63e5143 100644
+--- i/setup.py
++++ w/setup.py
+@@ -10,6 +10,7 @@ setup(
+     packages=find_packages(),
+     install_requires=[
+         'PyYAML==6.0',
++        'protobuf==5.27.3',
+         'Chameleon==4.5.4',
+         'lxml==4.9.2',
+         'javaobj-py3==0.4.4',
+@@ -32,4 +33,4 @@ setup(
+         'Programming Language :: Python :: 3.7',
+         'Programming Language :: Python :: 3.8',
+     ],
+-)
+\ No newline at end of file
++)
 diff --git i/smiler/config.json w/smiler/config.json
 index ca0421c..65694c0 100644
 --- i/smiler/config.json
@@ -40,6 +66,91 @@ index 6ed43f4..738cad8 100644
          return float(covered) / coverable
  
      def get_class_coverage(self):
+diff --git i/smiler/instrumenting/utils.py w/smiler/instrumenting/utils.py
+index 68a22a0..71c9fdf 100644
+--- i/smiler/instrumenting/utils.py
++++ w/smiler/instrumenting/utils.py
+@@ -152,6 +152,6 @@ def timeit(method):
+         time_log_path = os.path.join("times_log.csv")
+         args_str = ";".join(map(str,args))
+         entry = "{0};{1};{2};{3}\n".format(datetime.now(), end - start, method.__name__.lower(), args_str)
+-        Utils.log_entry(time_log_path, entry, sep=";")
++        #Utils.log_entry(time_log_path, entry, sep=";")
+         return result
+     return wrapper
+diff --git i/smiler/operations/adb.py w/smiler/operations/adb.py
+index 7bc86de..f69399b 100644
+--- i/smiler/operations/adb.py
++++ w/smiler/operations/adb.py
+@@ -2,33 +2,34 @@
+ import os
+ import time
+ from . import terminal
++from smiler.config import config
+ 
+ def install_multiple(apks):
+-    cmd = "adb install-multiple -r --no-incremental {}".format(" ".join(apks))
++    cmd = "{} install-multiple -r --no-incremental {}".format(config.adb_path, " ".join(apks))
+     out = terminal.request_pipe(cmd)
+     return out
+ 
+ def input_text(text, sleep=0):
+-    os.system("adb shell input text {}".format(text))
++    os.system("{} shell input text {}".format(config.adb_path, text))
+     if sleep > 0:
+         time.sleep(sleep)
+ 
+ 
+ def tap(x, y, sleep=0):
+-    os.system("adb shell input tap {} {}".format(x, y))
++    os.system("{} shell input tap {} {}".format(config.adb_path, x, y))
+     if sleep > 0:
+         time.sleep(sleep)
+ 
+ 
+ def clear_app_data(package):
+-    cmd = "adb shell pm clear {}".format(package)
++    cmd = "{} shell pm clear {}".format(config.adb_path, package)
+     terminal.request_pipe(cmd)
+ 
+ 
+ def send_broadcast(action, package):
+     #adb shell am broadcast -a 'tool.acv.snap' -n <package>/tool.acv.AcvReceiver
+     #adb shell am broadcast -a 'tool.acv.snap' -p <package>
+-    cmd = "adb shell am broadcast -a {} -p {}".format(action, package)
++    cmd = "{} shell am broadcast -a {} -p {}".format(config.adb_path, action, package)
+     terminal.request_pipe(cmd)
+ 
+ 
+@@ -37,17 +38,17 @@ def save_coverage(package):
+ 
+ 
+ def delete_app_sdcard_dir(package):
+-    cmd = "adb shell rm -rf /sdcard/Download/{}".format(package)
++    cmd = "{} shell rm -rf /sdcard/Download/{}".format(config.adb_path, package)
+     terminal.request_pipe(cmd)
+ 
+ 
+ def create_app_sdcard_dir(package):
+-    cmd = "adb shell mkdir /sdcard/Download/{}".format(package)
++    cmd = "{} shell mkdir /sdcard/Download/{}".format(config.adb_path, package)
+     terminal.request_pipe(cmd)
+ 
+ 
+ def sd_dir_exists(package):
+-    cmd = "adb shell ls /sdcard/Download/{}".format(package)
++    cmd = "{} shell ls /sdcard/Download/{}".format(config.adb_path, package)
+     try:
+         terminal.request_pipe(cmd)
+         return True
+@@ -56,6 +57,6 @@ def sd_dir_exists(package):
+ 
+ 
+ def launch_app(package):
+-    cmd = "adb shell monkey -p {} 1".format(package)
++    cmd = "{} shell monkey -p {} 1".format(config.adb_path, package)
+     terminal.request_pipe(cmd)
+ 
 diff --git i/smiler/operations/terminal.py w/smiler/operations/terminal.py
 index 9931206..001f512 100644
 --- i/smiler/operations/terminal.py
@@ -50,6 +161,34 @@ index 9931206..001f512 100644
  
 -    return res.decode("ascii")
 +    return res.decode(encoding='utf-8', errors='backslashreplace')
+diff --git i/smiler/resources/logging.yaml w/smiler/resources/logging.yaml
+index d7c0eee..8c8f084 100644
+--- i/smiler/resources/logging.yaml
++++ w/smiler/resources/logging.yaml
+@@ -1,7 +1,7 @@
+ version: 1
+ root:
+   level: DEBUG
+-  handlers: [console, file]
++  handlers: [console]
+ 
+ formatters:
+   simple:
+@@ -15,9 +15,9 @@ handlers:
+     class: logging.StreamHandler
+     formatter: minimal
+     stream: ext://sys.stdout
+-  file:
+-    level: DEBUG
+-    class: logging.FileHandler
+-    formatter: simple
+-    filename: log.log
++#  file:
++#    level: DEBUG
++#    class: logging.FileHandler
++#    formatter: simple
++#    filename: log.log
+ 
 diff --git i/smiler/smiler.py w/smiler/smiler.py
 index beb0d75..b599608 100644
 --- i/smiler/smiler.py

@@ -7,6 +7,7 @@ import signal
 import sys
 import time
 import traceback
+from math import ceil
 from pathlib import Path
 
 import click
@@ -32,7 +33,7 @@ TRACE_GROUP_NAME="sonoftroya"
 
 # supported tools:
 # to implement a new one add a function to call it in Tracer.run_tool()
-_SUPPORTED_TOOLS=["time", "monkey", "droidbot"]
+_SUPPORTED_TOOLS=["time", "monkey", "droidbot", "fastbot"]
 
 # default settings
 # ONANDR means it refers to a location on the android system
@@ -44,8 +45,8 @@ _RAW_OUTPUT_FNAME="raw_output.txt"
 
 _ONANDR_WRITEABLE_DIR=Path("/storage/emulated/0/Download/")
 
-_TIMEOUT_FOR_PROBE_SETUP=60 # uprobes are fast
-_DEFAULT_MAX_PROBES=10_000 # TODO still needed?
+_TIMEOUT_FOR_PROBE_SETUP=300 # uprobe events are fast, but not that fast.
+_DEFAULT_MAX_PROBES=30_000 # TODO still needed? yes
 
 
 class Tracer:
@@ -60,6 +61,11 @@ class Tracer:
                 host_result_dir=_ONHOST_DEFAULT_RESULT_DIR,
 
                 max_probes=_DEFAULT_MAX_PROBES,
+                buffer_size_kb=None,
+                buffer_percent=None,
+
+                force_wifi=None,
+
                 verbose=False,
             ):
         self.apkid = apkid
@@ -80,7 +86,10 @@ class Tracer:
         log.info("connected to device")
 
         # check eBPF capabilities
-        self.check_and_enable_tracing()
+        self.check_and_enable_tracing(buffer_size_kb, buffer_percent)
+
+        if force_wifi:
+            self.check_or_connect_to_wifi(force_wifi)
 
         self.apks_dm_dir = Path(apks_dm_dir) if apks_dm_dir else None
         self.host_res_dir = host_result_dir / apkid
@@ -127,7 +136,7 @@ class Tracer:
 
         log.info("device set up")
 
-    def check_and_enable_tracing(self):
+    def check_and_enable_tracing(self, buffer_size_kb, buffer_percent):
         """test the kernel config, enable tracing, and mount the debugfs if needed."""
         kconf = self.adbdev.shell("zcat /proc/config.gz")
         for setting in [
@@ -144,6 +153,61 @@ class Tracer:
             # why do we need to escape the semicolons? idk, drop me a line if you find out.
             self.adbdev.root_shell("if [ $(cat /proc/self/mounts | grep -c sys/kernel/debug) -eq 0 ]\; then mount -t debugfs debugfs /sys/kernel/debug\; fi") # noqa: W605
         log.info("kernel seems ok!")
+        if buffer_size_kb:
+            self.adbdev.root_shell(f"echo {int(buffer_size_kb)} > /sys/kernel/tracing/buffer_size_kb")
+            log.debug(f"set uprobe buffer size to {int(buffer_size_kb)}")
+        if buffer_percent:
+            log.error("Setting buffer_percent not supported for now due to permission issues. rest should work tho.")
+            # FIXME setting the buffer_percent like this gets us a permission error :(
+        #    self.adbdev.root_shell(f"echo {int(buffer_percent)} > /sys/kernel/tracing/buffer_percent")
+        #    log.debug(f"set uprobe buffer percent to {int(buffer_percent)}")
+
+    def check_or_connect_to_wifi(self, conn_string):
+        log.info("making sure wifi is enabled")
+
+        def get_ssid(conn_string):
+            r = []
+            for s in conn_string.split(' '):
+                if s in "open|owe|wpa2|wpa3|wep".split('|'):
+                    break
+                r.append(s)
+            return ' '.join(r)
+
+        def is_wifi_enabled():
+            wifi_status = self.adbdev.root_shell("cmd -w wifi status")
+            return "Wifi is disabled" in wifi_status
+
+        def is_wifi_connected(ssid):
+            wifi_status = self.adbdev.root_shell("cmd -w wifi status")
+            return f'Wifi is connected to "{ssid}"' in wifi_status
+
+        ssid = get_ssid(conn_string)
+        log.debug(f"checking for ssid: {ssid}")
+
+        if is_wifi_connected(ssid):
+            return # we are connected
+        elif is_wifi_enabled():
+            self.adbdev.shell("svc wifi enable")
+            timeout = 10
+            while (timeout > 0):
+                time.sleep(1)
+                if is_wifi_enabled():
+                    break
+                timeout-=1
+
+        # we can't connect to a saved network from the cli,
+        # see `adb shell su -c cmd -w wifi help`
+        # so we need to use the full connection string
+        self.adbdev.root_shell(f"cmd -w wifi connect-network {conn_string}")
+        timeout = 10
+        while (timeout > 0):
+            time.sleep(1)
+            if is_wifi_connected(ssid):
+                return # success
+            timeout-=1
+
+        # if we are here connection timed out
+        raise NotImplementedError("Tried to connect to wifi but it was not successful.")
 
     def uninstall_and_log_errors(self):
         """try to uninstall app and ignore errors, mainly due the app not being installed."""
@@ -152,9 +216,9 @@ class Tracer:
             # try uninstall and ignore failure
             self.adbdev.shell(f"pm uninstall {self.apkid}")
         except sh.ErrorReturnCode_1:
-            log.warn(f"error while uninstalling {self.apkid}!")
+            log.warning(f"error while uninstalling {self.apkid}! (not installed?)")
 
-    def install_and_compile_from_path(self):
+    def install_and_compile_from_path(self, compile_all_aot=False):
         """
         install base apk and split apks and dm file from directory containing them all with the following steps:
         - collect apk and dm filepaths
@@ -175,6 +239,13 @@ class Tracer:
         files_to_install.extend(dm_file)
 
         self.adbdev.adb("install-multiple", *files_to_install)
+
+        if compile_all_aot:
+            log.info("AOT compiling everyting")
+            # instead of speed-profile, compile everything AOT
+            # rest mimics fresh install instructions
+            self.adbdev.root_shell(f"pm compile -r install -m everything -f -v --full {self.apkid}")
+            log.info("AOT compilation successfull!")
 
         log.debug("installation successfull!")
 
@@ -233,19 +304,23 @@ class Tracer:
             self._andro_dm_path = Path(pm_path[0]).with_suffix(".dm")
         return self._andro_dm_path
 
-    def prepare_tracepoints_sh(self, also_startup_poststartup):
+    def prepare_tracepoints_sh(self, code_coverage, also_startup_poststartup):
         """
         - create info.json containing offsets of methods in primary.prof
         - create tracepoints.sh and push it to device
         """
+        if code_coverage:
+            log.warning("code coverage is experimental and times out if app has many (>30k methods)")
+
         self._prepare_profile_and_oatdump()
 
         self.profile_info, self.offsets_info = Tracer.generate_profile_and_offsets_info(
                 self.host_prim_profdump_path,
                 self.host_base_oatdump_path,
-                self.oatdata_offset)
+                self.oatdata_offset,
+                code_coverage)
 
-        self._create_tracepoints_sh(also_startup_poststartup)
+        self._create_tracepoints_sh(also_startup_poststartup, code_coverage)
         self.push_thru_writable(self.host_tracepoinsts_sh, self.andro_tracepoints_sh)
         self.adbdev.root_shell(f"chmod +x {self.andro_tracepoints_sh}")
 
@@ -281,9 +356,14 @@ class Tracer:
         log.debug("created and pulled oatdump")
 
     @staticmethod
-    def generate_profile_and_offsets_info(profdump_path, oatdump_path, oatdata_offset):
+    def generate_profile_and_offsets_info(profdump_path, oatdump_path, oatdata_offset, code_coverage):
+        """
+        profile_info contains a parsed profile mapped based on startup/poststartup/hot methods
+
+        offsets_info contains the methods we are interested in, or all, if code_coverage is set to true.
+        """
         profile_info = Tracer.read_profdump_info(profdump_path)
-        oatdump_info = Tracer.read_oatdump_info(profile_info, oatdump_path, oatdata_offset)
+        oatdump_info = Tracer.read_oatdump_info(profile_info, oatdump_path, oatdata_offset, code_coverage)
         return profile_info, oatdump_info
 
     @staticmethod
@@ -316,9 +396,9 @@ class Tracer:
         return profile_info
 
     @staticmethod
-    def read_oatdump_info(profile_info, oatdump_path, oatdata_offset):
+    def read_oatdump_info(profile_info, oatdump_path, oatdata_offset, include_nonprofile=False):
 
-        oatdump_info = {'hot':[], 'startup':[], 'poststartup':[]}
+        oatdump_info = {'hot':[], 'startup':[], 'poststartup':[], 'other':[]}
 
         # important: oatdump sometimes has non-utf-8 chars :(
         with open(oatdump_path, errors='backslashreplace') as f:
@@ -352,7 +432,7 @@ class Tracer:
                 elif not cur_method_idx and (m := re.match(r"  [0-9]+: (.*)( \(dex_method_idx=)([0-9]+).*", line)):
                     cur_method_idx = int(m.group(3))
                     # check if it's an index we actually care about
-                    if cur_method_idx not in profile_info['hot'][cur_loc] and cur_method_idx not in profile_info['startup'][cur_loc] and cur_method_idx not in profile_info['poststartup'][cur_loc]:
+                    if not include_nonprofile and cur_method_idx not in profile_info['hot'][cur_loc] and cur_method_idx not in profile_info['startup'][cur_loc] and cur_method_idx not in profile_info['poststartup'][cur_loc]:
                         cur_method_idx = None
                         continue
                     cur_method_name = m.group(1)
@@ -376,12 +456,20 @@ class Tracer:
                     # str(dex-location);int(method_idx);hexstr(offset);hexstr(oatdata_offset);int(computed_offset);str(name)
                     __dat = (__loc, __mi, __off, __odo, __cof, __nam)
 
+                    _in_prof = False
+                    # can be optimized as it can appear in multiple sets, but it makes accessing it later easier for differentiating those cases
                     if cur_method_idx in profile_info['hot'][cur_loc]:
                         oatdump_info['hot'].append(__dat)
+                        _in_prof = True
                     if cur_method_idx in profile_info['startup'][cur_loc]:
                         oatdump_info['startup'].append(__dat)
+                        _in_prof = True
                     if cur_method_idx in profile_info['poststartup'][cur_loc]:
                         oatdump_info['poststartup'].append(__dat)
+                        _in_prof = True
+
+                    if not _in_prof:
+                        oatdump_info['other'].append(__dat)
 
                     cur_method_idx = None
 
@@ -396,7 +484,7 @@ class Tracer:
         self.adbdev.push(host_path, (_ONANDR_WRITEABLE_DIR / andro_path.name))
         self.adbdev.root_shell(f"mv {(_ONANDR_WRITEABLE_DIR / andro_path.name)} {andro_path}")
 
-    def _create_tracepoints_sh(self,also_startup_poststartup):
+    def _create_tracepoints_sh(self,also_startup_poststartup, code_coverage):
         """create a .sh file that contains instructions to set up uprobes"""
         if self.max_probes == 0:
             self.max_probes = len(self.offsets_info)
@@ -407,13 +495,14 @@ class Tracer:
 
         offsets = []
         offsets.extend(self.offsets_info['hot'])
-        if also_startup_poststartup:
+        if also_startup_poststartup or code_coverage:
             log.debug("also using startup and poststartup methods")
             offsets.extend(self.offsets_info['startup'])
             offsets.extend(self.offsets_info['poststartup'])
+        if code_coverage:
+            log.debug("also using non-profile methods")
+            offsets.extend(self.offsets_info['other'])
 
-        counter = 0
-        _unique_offsets = set()
         with open(self.host_tracepoinsts_sh, "w") as outfile:
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] starting!'\n")
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] disabling tracing'\n")
@@ -424,6 +513,9 @@ class Tracer:
             # TODO echo > uprobe_events
             outfile.write("echo > /sys/kernel/tracing/trace;\n")
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] starting setup of uprobes'\n")
+
+            counter = 0
+            _unique_offsets = set()
             for _, _, offset, _, computed_offset, _ in offsets:
                 # sometimes functions are removed, leaving no offset to work with
                 if int(offset, 16) == 0:
@@ -433,6 +525,12 @@ class Tracer:
                     continue
                 else:
                     _unique_offsets.add(computed_offset)
+
+                counter += 1
+                if counter >= self.max_probes:
+                    log.warning(f"max probes ({self.max_probes}) reached, not tracing more")
+                    continue
+
                 if counter % 1000 == 0 and counter > 0:
                     outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] set up {counter} probes'\n")
                 computed_offset = hex(computed_offset)
@@ -444,10 +542,9 @@ class Tracer:
                 # print(f"echo 'traceoff:1' > events/{group}/event{counter}/trigger") (shows one event)
                 # print(f"echo 'disable_event:{group}:event{counter}:2 if nr_rq > 1' > events/{group}/event{counter}/trigger") (shows nothing)
                 # these all seem to not work as intended
-                counter += 1
-                if counter >= self.max_probes:
-                    log.warning(f"max probes ({self.max_probes}) reached, not tracing more")
-                    break
+
+            log.info(f"tracing {len(trace_info)}/{counter} methods")
+
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] {counter} uprobes set up, starting tracing group {TRACE_GROUP_NAME}'\n")
             outfile.write(f"echo 1 > /sys/kernel/tracing/events/{TRACE_GROUP_NAME}/enable;\n")
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] tracing set up, ready for on and app start'\n")
@@ -460,14 +557,15 @@ class Tracer:
     def _monkey_callback_print(self, line):
         if "Monkey aborted due to error" in line or "Events injected" in line:
             self._should_stop_monkey = True
-            if line.startswith("Got IOException") or "// Injection Failed" in line or "activityResuming" in line or line.strip() == "":
-                return # swallow these things, very verbose
-            log.debug(f"MONKEY: {line.rstrip()}")
+        if line.startswith("Got IOException") or "// Injection Failed" in line or "activityResuming" in line or line.strip() == "":
+            return # swallow these things, very verbose
+        log.debug(f"MONKEY: {line.rstrip()}")
 
     def run_monkey(self, max_runtime):
         self._should_stop_monkey = False
 
-        monkeycmd = f"monkey -p {self.apkid} -s 20240412 --throttle 100 10000000" # seed with date
+
+        monkeycmd = f"monkey -p {self.apkid} -s 20240412 --throttle 1000 --ignore-crashes --kill-process-after-error --ignore-security-exceptions 10000000" # seed with date
 
         log.info(f"starting monkey as: {monkeycmd}")
 
@@ -479,7 +577,7 @@ class Tracer:
             time.sleep(1)
             time_in_monkey+=1
             if self._should_stop_monkey:
-                log.warn("uh-oh, monkey terminated earlier than expected")
+                log.warning("uh-oh, monkey terminated earlier than expected")
                 break
 
         try:
@@ -528,7 +626,7 @@ class Tracer:
             time.sleep(1)
             time_in_bot+=1
             if self._should_stop_bot:
-                log.warn("uh-oh, droidbot terminated earlier than expected")
+                log.warning("uh-oh, droidbot terminated earlier than expected")
                 break
 
         try:
@@ -539,6 +637,69 @@ class Tracer:
             log.info("handled expected sigkill exception of droidbot process")
         except ProcessLookupError:
                 log.info("handled expected ProcessLookupError if droidbot terminated early.")
+
+    def _fastbot_callback_print(self, line):
+        if "aborted due to error" in line or "Events injected" in line:
+            self._should_stop_fastbot = True
+        if "  event time:" in line \
+                or " rpc cost time: " in line \
+                or " action type: " in line \
+                or " // Event id: " in line \
+                or line.strip() == "":
+            return # swallow these things, very verbose
+        if "// Monkey is over!" in line: # yeyeah, no it's fastbot.
+            pass # successful finish
+        log.debug(f"FASTBOT: {line.rstrip()}")
+
+    def run_fastbot(self, max_runtime):
+        self._should_stop_fastbot = False
+
+        log.warning("TODO: implement checking and pushing fastbot files if necessary") # TODO
+
+        _run_minutes = max_runtime/60
+        if max_runtime % 60 != 0:
+            _run_minutes = max(1, ceil(_run_minutes))
+            log.warning(f"fastbot only takes minutes in runtime, rounding up to {_run_minutes}")
+
+        # based on the command in the fastbot documentation
+        # we use exec-out to stream the output and add a seed
+        # verbosity removed since it doesn't do much
+        # otherwise it's the same
+        proc_fastbot = self.adbdev.adb("exec-out",
+                        "CLASSPATH=/sdcard/monkeyq.jar:/sdcard/framework.jar:/sdcard/fastbot-thirdpart.jar",
+                        "exec", "app_process",
+                        "/system/bin", "com.android.commands.monkey.Monkey",
+                        "-p", self.apkid,
+                        "-s", "20240412",
+                        "--agent", "reuseq",
+                        "--running-minutes", str(int(_run_minutes)),
+                        "--throttle", "1000",
+                        _bg=True,
+                        _bg_exc=False,
+                        _out=lambda x: self._fastbot_callback_print(x))
+
+        log.info("waiting for timeout")
+        time_in_fastbot = 0
+        while time_in_fastbot < max_runtime:
+            time.sleep(1)
+            time_in_fastbot+=1
+            if self._should_stop_fastbot:
+                log.warning("uh-oh, fastbot terminated earlier than expected")
+                break
+
+        try:
+            self.adbdev.root_shell("kill -9 \\`pgrep monkey\\`") # fastbot based on monkey
+        except sh.ErrorReturnCode_1:
+            log.info("handled expected fail of kill when if fastbot already terminated")
+
+        try:
+            proc_fastbot.signal(signal.SIGKILL) # TODO didn't work during testing so above added. figure out why, see monkey
+            log.info("waiting for fastbot process to get killed")
+            proc_fastbot.wait()
+        except sh.SignalException_SIGKILL:
+            log.info("handled expected sigkill exception of fastbot process")
+        except ProcessLookupError:
+            log.info("handled expected ProcessLookupError if fastbot terminated early.")
 
     # TOOLS END HERE ------------------------------------------------
 
@@ -554,6 +715,8 @@ class Tracer:
             self.run_monkey(max_runtime)
         elif tool == "droidbot":
             self.run_droidbot(max_runtime)
+        elif tool == "fastbot":
+            self.run_fastbot(max_runtime)
         else:
             log.critical("unknown tool specified!")
 
@@ -768,6 +931,10 @@ class Tracer:
 @click.option("--no-cleanup-host", default=False, is_flag=True, help="keep intermediate artifacts on host")
 @click.option("--also-startup-poststartup", default=False, is_flag=True, help="also trace startup and poststartup methods, not just hot methods")
 # TODO no-cleanup only if error?
+@click.option("--code-coverage", default=False, is_flag=True, help="traces not just methods in profile, but all functions in oat file. also triggers complete AOT compilation.")
+@click.option("--buffer-size-kb", default=None, help="set uprobe buffer size in /sys/kernel/tracing/buffer_size_kb. increase to avoid lost events")
+@click.option("--buffer-percent", default=None, help="set when uprobe buffer starts reading in /sys/kernel/tracing/buffer_percent. decrease to avoid read spikes")
+@click.option("--force-wifi", default=None, help="make sure we are connected to wifi as 'ssid wpa2 passwd', see `cmd -w wifi help` for more info")
 def main(
             apkid,
             verbose,
@@ -783,7 +950,11 @@ def main(
             result_dir,
             no_cleanup_android,
             no_cleanup_host,
-            also_startup_poststartup
+            also_startup_poststartup,
+            code_coverage,
+            buffer_size_kb,
+            buffer_percent,
+            force_wifi
         ):
     """
     The Tracer assumes `adb -s <device_id>` can connect to the device and we have root.
@@ -832,6 +1003,7 @@ def main(
             emu.recreate(force=True)
             emu.start_and_wait_in_background()
 
+        t = None
         t = Tracer(
                     apkid=apkid,
                     device_id=device_id,
@@ -840,14 +1012,19 @@ def main(
                     android_tmpdir=android_tmpdir,
                     host_result_dir=result_dir,
                     max_probes=max_probes,
+                    buffer_size_kb=buffer_size_kb,
+                    buffer_percent=buffer_percent,
+                    force_wifi=force_wifi,
                     verbose=verbose,
                 )
 
         if fresh_install:
             t.uninstall_and_log_errors()
-            t.install_and_compile_from_path()
+            t.install_and_compile_from_path(compile_all_aot=code_coverage)
 
-        t.prepare_tracepoints_sh(also_startup_poststartup)
+        if code_coverage and also_startup_poststartup:
+            log.warning("tracing code coverage will include startup and poststartup methods by definition, no need to set both.")
+        t.prepare_tracepoints_sh(code_coverage, also_startup_poststartup)
 
         t.run_tracer(tool=tool, max_runtime=tool_max_runtime)
 

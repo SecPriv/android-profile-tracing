@@ -1,0 +1,53 @@
+diff --git i/monkey/apk.build.gradle w/monkey/apk.build.gradle
+index b7113c8..9e9e876 100644
+--- i/monkey/apk.build.gradle
++++ w/monkey/apk.build.gradle
+@@ -30,11 +30,11 @@
+ apply plugin: 'com.android.application'
+ 
+ android {
+-    compileSdkVersion 32
++    compileSdkVersion 34
+ 
+     defaultConfig {
+         minSdkVersion 22
+-        targetSdkVersion 32
++        targetSdkVersion 34
+         versionCode 1
+         versionName "1.0"
+         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+diff --git i/monkey/build.gradle w/monkey/build.gradle
+index 086c67f..ed326c4 100644
+--- i/monkey/build.gradle
++++ w/monkey/build.gradle
+@@ -20,11 +20,11 @@
+ apply plugin: 'com.android.library'
+ 
+ android {
+-    compileSdkVersion 32
++    compileSdkVersion 34
+ 
+     defaultConfig {
+         minSdkVersion 22
+-        targetSdkVersion 32
++        targetSdkVersion 34
+         versionCode 1
+         versionName "1.0"
+         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+diff --git i/monkey/src/main/java/com/android/commands/monkey/events/base/MonkeyRotationEvent.java w/monkey/src/main/java/com/android/commands/monkey/events/base/MonkeyRotationEvent.java
+index ff901d8..1b7533f 100755
+--- i/monkey/src/main/java/com/android/commands/monkey/events/base/MonkeyRotationEvent.java
++++ w/monkey/src/main/java/com/android/commands/monkey/events/base/MonkeyRotationEvent.java
+@@ -59,6 +59,12 @@ public class MonkeyRotationEvent extends MonkeyEvent {
+             return MonkeyEvent.INJECT_SUCCESS;
+         } catch (RemoteException ex) {
+             return MonkeyEvent.INJECT_ERROR_REMOTE_EXCEPTION;
++        } catch (NoSuchMethodError ex) {
++            // silent fix for Android 14
++            // we can't use the new freeze/thawRotation(degrees, CALLER)
++            // because it's not in the framework.jar
++            // but pixel8 requires the new signature ..
++            return MonkeyEvent.INJECT_SUCCESS;
+         }
+     }
+ }
