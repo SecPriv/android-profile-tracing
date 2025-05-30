@@ -9,6 +9,7 @@ import time
 import traceback
 from math import ceil
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import click
 import sh
@@ -127,6 +128,8 @@ class Tracer:
         self.profile_info = None # see read_profdump_info
         self.offsets_info = None # see read_oatdump_info
         self.trace_info = None # see _create_tracepoints_sh
+        self.traced_activities = None
+        self.traced_activities_set = set()
 
         # collecting the uprobes
         self._raw_hit_uprobes = []
@@ -168,7 +171,7 @@ class Tracer:
         def get_ssid(conn_string):
             r = []
             for s in conn_string.split(' '):
-                if s in "open|owe|wpa2|wpa3|wep".split('|'):
+                if s in ["open", "owe", "wpa2", "wpa3", "wep"]:
                     break
                 r.append(s)
             return ' '.join(r)
@@ -304,9 +307,11 @@ class Tracer:
             self._andro_dm_path = Path(pm_path[0]).with_suffix(".dm")
         return self._andro_dm_path
 
-    def prepare_tracepoints_sh(self, code_coverage, also_startup_poststartup):
+    def prepare_tracepoints_sh(self, code_coverage, also_startup_poststartup, only_appid):
         """
         - create info.json containing offsets of methods in primary.prof
+        - filter the offsets to trace only chosen if needed
+        - prioritize the appid methods
         - create tracepoints.sh and push it to device
         """
         if code_coverage:
@@ -320,7 +325,12 @@ class Tracer:
                 self.oatdata_offset,
                 code_coverage)
 
-        self._create_tracepoints_sh(also_startup_poststartup, code_coverage)
+        self.filter_offsets_to_trace(
+            also_startup_poststartup,
+            code_coverage,
+            only_appid)
+
+        self._create_tracepoints_sh()
         self.push_thru_writable(self.host_tracepoinsts_sh, self.andro_tracepoints_sh)
         self.adbdev.root_shell(f"chmod +x {self.andro_tracepoints_sh}")
 
@@ -397,7 +407,7 @@ class Tracer:
 
     @staticmethod
     def read_oatdump_info(profile_info, oatdump_path, oatdata_offset, include_nonprofile=False):
-
+        """[str(dex-location); int(method_idx); hexstr(offset); hexstr(oatdata_offset); int(computed_offset); str(name)]"""
         oatdump_info = {'hot':[], 'startup':[], 'poststartup':[], 'other':[]}
 
         # important: oatdump sometimes has non-utf-8 chars :(
@@ -419,15 +429,21 @@ class Tracer:
                 # each dex is seperate and provided as /path/to/base.apk[!classesN.dex]
                 if line.startswith("location:"):
                     cur_loc = line.split()[1].split('/')[-1].strip()
-                    # check early if location is in the hotmethods
-                    if cur_loc not in profile_info['hot'] and cur_loc not in profile_info['startup'] and cur_loc not in profile_info['poststartup']:
-                        # TODO sometimes it is clases.dex instead base.apk, maybe one day we can errorhandle this better, for now raise an issue.
-                        raise NotImplementedError(f"dex file id '{cur_loc}' not in method keys!(hot: {profile_info['hot'].keys()}, startup: {profile_info['startup'].keys()}, poststartup: {profile_info['poststartup'].keys()}")
-
+                    log.info(f"  reading oatdump at: {cur_loc}")
                     cur_method_idx = None
                     cur_offset = None
-                    log.info(f" - reading oatdump at: {cur_loc}") # to check progress
 
+                    # check early if location is in profile
+                    if cur_loc not in profile_info['hot'] and cur_loc not in profile_info['startup'] and cur_loc not in profile_info['poststartup']:
+                        # one case is that the apk got more files than the profile. in such a case we will continue to the next and skip all lines
+                        log.warning(f"found {cur_loc} in oatdump but not in profile keys (hot: {profile_info['hot'].keys()}, startup: {profile_info['startup'].keys()}, poststartup: {profile_info['poststartup'].keys()}) - skipping for now")
+                        cur_loc = "SPECIAL_SKIP"
+                        continue
+                        # FIXME sometimes it is clases.dex instead base.apk, maybe one day we can errorhandle this better
+
+                # skip dex locations that are not in profiles
+                if cur_loc == "SPECIAL_SKIP":
+                    continue
                 # if we are not in a method, we scan for methods
                 elif not cur_method_idx and (m := re.match(r"  [0-9]+: (.*)( \(dex_method_idx=)([0-9]+).*", line)):
                     cur_method_idx = int(m.group(3))
@@ -476,32 +492,58 @@ class Tracer:
             if _magic_check != 3:
                 raise NotImplementedError("oatdump magic does not match expected value!")
 
+        if len(oatdump_info['hot']) + len(oatdump_info['startup']) + len(oatdump_info['poststartup']) == 0:
+            raise NotImplementedError("Parsed oatdump but found 0 methods. Probably the mapping to locations failed.")
+
         log.debug("oatdump parsed for offsets")
         return oatdump_info
+
+    def filter_offsets_to_trace(self,
+        also_startup_poststartup,
+        also_nonprofile,
+        only_appid):
+        """filter the profile and offsets info to create a list of methods to trace. takes care of methods with no code(optimized away) and merging various classes of methods. return prioriti"""
+        filtered_offsets_to_trace = []
+
+        # merge
+        sourceset = set(self.offsets_info['hot'])
+        if also_startup_poststartup:
+            sourceset = sourceset.union(set(self.offsets_info['startup']))
+            sourceset = sourceset.union(set(self.offsets_info['poststartup']))
+
+        if also_nonprofile:
+            sourceset = sourceset.union(set(self.offsets_info['other']))
+
+        # order and filter
+        only_appid_set = {x for x in sourceset if self.apkid in x[5]}
+
+        non_appid_set = sourceset.difference(only_appid_set)
+
+        filtered_offsets_to_trace = list(only_appid_set)
+
+        if not only_appid:
+            filtered_offsets_to_trace.extend(non_appid_set)
+
+        # save
+        self.offsets_to_trace = filtered_offsets_to_trace
+
+        if self.max_probes == 0:
+            self.max_probes = len(self.offsets_to_trace)
+        elif self.max_probes < len(self.offsets_to_trace):
+            if self.max_probes < len(only_appid_set):
+                log.warning(f"max probes cutting off {len(self.offsets_to_trace)-self.max_probes} methods that won't be traced. {len(only_appid_set)-self.max_probes} appid methods affected!")
+            else:
+                log.warning(f"max probes cutting off {len(self.offsets_to_trace)-self.max_probes} methods that won't be traced. appid methods not affected.")
 
     def push_thru_writable(self, host_path, andro_path):
         """because #reasons, some dirs cant be pushed to directly"""
         self.adbdev.push(host_path, (_ONANDR_WRITEABLE_DIR / andro_path.name))
         self.adbdev.root_shell(f"mv {(_ONANDR_WRITEABLE_DIR / andro_path.name)} {andro_path}")
 
-    def _create_tracepoints_sh(self,also_startup_poststartup, code_coverage):
+    def _create_tracepoints_sh(self):
         """create a .sh file that contains instructions to set up uprobes"""
-        if self.max_probes == 0:
-            self.max_probes = len(self.offsets_info)
-        elif also_startup_poststartup:
-            log.warning("setting limit to probes but including startup and poststartup might cut them off, no distributed selection is performed!")
 
         trace_info = [] # array of tracepoints set, using oatdata offsets
-
-        offsets = []
-        offsets.extend(self.offsets_info['hot'])
-        if also_startup_poststartup or code_coverage:
-            log.debug("also using startup and poststartup methods")
-            offsets.extend(self.offsets_info['startup'])
-            offsets.extend(self.offsets_info['poststartup'])
-        if code_coverage:
-            log.debug("also using non-profile methods")
-            offsets.extend(self.offsets_info['other'])
 
         with open(self.host_tracepoinsts_sh, "w") as outfile:
             outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] starting!'\n")
@@ -516,7 +558,7 @@ class Tracer:
 
             counter = 0
             _unique_offsets = set()
-            for _, _, offset, _, computed_offset, _ in offsets:
+            for _, _, offset, _, computed_offset, method_name in self.offsets_to_trace:
                 # sometimes functions are removed, leaving no offset to work with
                 if int(offset, 16) == 0:
                     continue
@@ -529,7 +571,7 @@ class Tracer:
                 counter += 1
                 if counter >= self.max_probes:
                     log.warning(f"max probes ({self.max_probes}) reached, not tracing more")
-                    continue
+                    break
 
                 if counter % 1000 == 0 and counter > 0:
                     outfile.write(f"echo '[{_TRACEPOINTS_SH_FNAME}] set up {counter} probes'\n")
@@ -537,7 +579,8 @@ class Tracer:
                 outfile.write(
                     f"echo 'p:{TRACE_GROUP_NAME}/event{computed_offset} {self.andro_odex_path}:{computed_offset}' >> /sys/kernel/tracing/uprobe_events;\n"
                 )
-                trace_info.append(computed_offset)
+                is_apkid_method = self.apkid in method_name
+                trace_info.append((computed_offset, is_apkid_method))
                 # print(f"echo 'disable_event:{group}:event{counter}' > events/{group}/event{counter}/trigger") (doesn't show anything in the trace)
                 # print(f"echo 'traceoff:1' > events/{group}/event{counter}/trigger") (shows one event)
                 # print(f"echo 'disable_event:{group}:event{counter}:2 if nr_rq > 1' > events/{group}/event{counter}/trigger") (shows nothing)
@@ -602,7 +645,7 @@ class Tracer:
         if not self.apks_dm_dir:
             raise NotImplementedError("droidbot needs access to apk files")
 
-        apk_path = self.apks_dm_dir / "base.apk"
+        apk_path = self.apks_dm_dir / f"{self.apkid}.apk"
 
         outdir = self._host_res_tmpdir / "_droidbot_res"
         outdir.mkdir(exist_ok=True)
@@ -736,7 +779,19 @@ class Tracer:
             return
         log.debug(f"{line.rstrip()}")
 
-    def _start_tracing(self):
+    def _trace_activities_callback(self, line):
+        #og.debug(f"[ACTIVITIES CALLBACK GOT]: {line}")
+        if "ActivityRecord" not in line:
+            return
+        delta = datetime.now()-self._activities_starttime
+        activity = line.strip().split(' ')[2]
+        ts = f"{delta.seconds}.{delta.microseconds:06d}"
+        if activity not in self.traced_activities_set:
+            log.debug(f"[ACTIVITIES CALLBACK ADDED]: {activity}")
+            self.traced_activities.append((activity, ts))
+            self.traced_activities_set.add(activity)
+
+    def _start_tracing(self, also_trace_activities):
         self._canStartTool = False
         self._canEndEmulator = False
 
@@ -760,10 +815,36 @@ class Tracer:
                 proc_tracer.signal(signal.SIGKILL) # TODO can this actually kill the scrip withthe uprobest?
                 raise NotImplementedError(f"setting up tracer probes took more than {_TIMEOUT_FOR_PROBE_SETUP}s, aborting")
 
+        self._activities_starttime = None
+        self._proc_activities = None
+        if also_trace_activities:
+            log.info("setting up activity tracing")
+            self.traced_activities = []
+            activities_tracecmd = "sh -c 'while true; do dumpsys activity a | grep topResumedActivity; sleep 0.5; done'"
+
+            self._activities_starttime = datetime.now()
+            self._proc_activities = self.adbdev.adb("exec-out", activities_tracecmd, _bg=True, _bg_exc=False,  _out=lambda x: self._trace_activities_callback(x))
+
+            # finally wake up display so we can actually get activities
+            self.adbdev.shell("input keyevent KEYCODE_WAKEUP")
+            self.adbdev.shell("input keyevent KEYCODE_MENU") # assume no passcode
+            self.adbdev.shell("input keyevent KEYCODE_HOME") # if we are awake menu opens context. close with home.
+            time.sleep(0.5)
+
+
     def _stop_tracing(self):
         """turn tracing off but don't clean up the uprobes - reboot handles this."""
         log.debug("turning tracing off")
         self.adbdev.adb("exec-out", "su", "-c", "echo 0 > /sys/kernel/tracing/tracing_on")
+
+        if self._activities_starttime:
+            log.info("tearing down activity tracing")
+            with contextlib.suppress(sh.ErrorReturnCode_1):
+                try:
+                    self._proc_activities.signal(signal.SIGKILL)
+                except ProcessLookupError:
+                    log.warning("could not close activity dumpsys")
+            log.info(f"found {len(self.traced_activities)} activites in foreground during run.")
 
         # TODO test on emulaotr, do we need to wait with uprobes?
         # then give it 10 seconds grace time to print the statistic
@@ -775,7 +856,7 @@ class Tracer:
         #        log.info("grace period for tracer ended")
         #        break
 
-    def run_tracer(self, tool="time", max_runtime=5):
+    def run_tracer(self, tool="time", max_runtime=5, also_trace_activities=False):
         """start the tracer and the tool to be evaluated"""
         if tool not in _SUPPORTED_TOOLS:
             log.critical(f"unknown tool {tool}")
@@ -787,7 +868,7 @@ class Tracer:
             log.debug("killing app if it runs")
             self.adbdev.root_shell("killall", self.apkid) # TODO check if running
 
-        self._start_tracing()
+        self._start_tracing(also_trace_activities)
         self._run_tool(tool, max_runtime)
         self._stop_tracing()
 
@@ -815,7 +896,7 @@ class Tracer:
                 # check expected layout:
                 # "app.organicmaps-24536   [002] .....  4423.725704: event0x1d96b0: (0x6e16e3e6b0)"
                 # "AsyncTask #2-10249 [005] ..... 184.273432: event0xa4610: (0x767e1bc610)" -> process name can have space!
-                if "event0x" not in line or "....." not in line or "[" not in line:
+                if "event0x" not in line or "[" not in line:
                     log.warning(f"unexpected raw line: '{line}'")
                     continue
                 name_n_other = line.split("[")
@@ -871,6 +952,7 @@ class Tracer:
                 self.profile_info,
                 self.offsets_info,
                 self.trace_info,
+                self.traced_activities,
                 hit_uprobes
             )
 
@@ -932,6 +1014,8 @@ class Tracer:
 @click.option("--also-startup-poststartup", default=False, is_flag=True, help="also trace startup and poststartup methods, not just hot methods")
 # TODO no-cleanup only if error?
 @click.option("--code-coverage", default=False, is_flag=True, help="traces not just methods in profile, but all functions in oat file. also triggers complete AOT compilation.")
+@click.option("--only-appid", default=False, is_flag=True, help="limits tracing to only methods that contain a reference to the appid in the signature (class, return, or arguments)")
+@click.option("--also-trace-activities", default=False, is_flag=True, help="use dumpsys to periodically check which activities are run")
 @click.option("--buffer-size-kb", default=None, help="set uprobe buffer size in /sys/kernel/tracing/buffer_size_kb. increase to avoid lost events")
 @click.option("--buffer-percent", default=None, help="set when uprobe buffer starts reading in /sys/kernel/tracing/buffer_percent. decrease to avoid read spikes")
 @click.option("--force-wifi", default=None, help="make sure we are connected to wifi as 'ssid wpa2 passwd', see `cmd -w wifi help` for more info")
@@ -952,6 +1036,8 @@ def main(
             no_cleanup_host,
             also_startup_poststartup,
             code_coverage,
+            only_appid,
+            also_trace_activities,
             buffer_size_kb,
             buffer_percent,
             force_wifi
@@ -1024,9 +1110,9 @@ def main(
 
         if code_coverage and also_startup_poststartup:
             log.warning("tracing code coverage will include startup and poststartup methods by definition, no need to set both.")
-        t.prepare_tracepoints_sh(code_coverage, also_startup_poststartup)
+        t.prepare_tracepoints_sh(code_coverage, also_startup_poststartup, only_appid)
 
-        t.run_tracer(tool=tool, max_runtime=tool_max_runtime)
+        t.run_tracer(tool=tool, max_runtime=tool_max_runtime, also_trace_activities=also_trace_activities)
 
         t.save_results()
     except Exception:

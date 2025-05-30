@@ -59,12 +59,12 @@ default:
 ifeq ($(JOBNAME),)
 fix-meta-results:
 	@echo "if a phone drops off the usb or another irrecoverable error happens, all remaining apps will fail to be analyzed"
-	@echo "to rerun their analysis, remove them from the joblog and clean up the parallel result dirs"
+	@echo "to rerun their analysis, remove them from the joblog and then invoke this target to clean up the parallel result dirs"
 	@echo "this is necessary because of a bug in parallel where using --joblog and --results won't run --retry correctly without manual cleanup"
 	@echo "jobname not set, run with 'export JOBNAME=name; make fix-meta-results'"
 else
 fix-meta-results: --check_fix_ok
-	@echo "running removal of joblog results that need to be re-run"
+	@echo "running removal of items not in joblog from results that need to be re-run"
 	for pth in $(METADIR)/$(JOBNAME).results/1/*; do \
 		ID=`echo $$pth | cut -d '/' -f 4`; \
 		if grep -wq "$$ID" $(METADIR)/$(JOBNAME).joblog; then \

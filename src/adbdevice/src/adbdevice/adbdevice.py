@@ -68,9 +68,12 @@ class AdbDevice:
         # set up AIDL codes
         if version_sdk in aidl_codes:
             self.aidl_codes = aidl_codes[version_sdk]
+        if version_sdk == "35":
+            self.log.fatal(f"unsupported SDK version: 35. continuing anyway")
+            self.aidl_codes = None
         else:
             # NOTE log/crash/guess?
-            error_msg = f"Unsupported SDK version: {version_sdk}"
+            error_msg = f"Unsupported SDK version: {version_sdk}."
             self.log.fatal(error_msg)
             sys.exit(error_msg)
 
