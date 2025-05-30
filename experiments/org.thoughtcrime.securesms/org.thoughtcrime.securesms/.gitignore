@@ -1,0 +1,8 @@
+org.thoughtcrime.securesms/*.apk
+org.thoughtcrime.securesms/*.dm
+org.thoughtcrime.securesms/*_files
+.ipynb_checkpoints/
+results/
+resultingmethods.csv
+aproftracer.log
+*.pickle
