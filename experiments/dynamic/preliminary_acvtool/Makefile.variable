@@ -1,0 +1,42 @@
+
+INPUTCSV=../apps-that-dont-crash.csv
+
+help:
+	echo 'hi'
+
+# expects:
+# - METADIR
+# - JOBNAME
+# - INPUTCSV
+# - TOOL
+# - DEVICEID
+# - DURATION
+--run-acvtool:
+	mkdir -p $(METADIR)
+	date | sed -e "s/^/Start: /" | tee -a $(METADIR)/$(JOBNAME).startend
+	cat $(INPUTCSV) | parallel \
+		-j1 \
+		--joblog $(METADIR)/$(JOBNAME).joblog \
+		--resume \
+		--eta \
+		--results $(METADIR)/$(JOBNAME).results/ \
+		'/usr/bin/time -v nice -n 5 -- choom -n 1000 -- ./runacvtool-$(TOOL).sh $(DURATION) {} $(DEVICEID) $(JOBNAME) 2>&1' || true
+	date | sed -e "s/^/End: /" | tee -a $(METADIR)/$(JOBNAME).startend
+
+
+# expects:
+# - METADIR
+# - JOBNAME
+--stats-acvtool:
+	@echo -n "result-dirs: "
+	@ls wd_$(JOBNAME)/ | wc -l
+	@echo -n "+ main_index.html: "
+	@find wd_$(JOBNAME)/ -maxdepth 3 -type f -name "main_index.html" | wc -l
+	#@echo -n "- generic exceptions: "
+	#@grep -r "generic exception caught" $(METADIR)/$(JOBNAME).results/ | wc -l
+	#@echo -n "- timeout probes: "
+	#@grep -r "NotImplementedError: setting up tracer probes took more than" $(METADIR)/$(JOBNAME).results/ | wc -l
+
+
+noncrashing-results.csv:
+	while read -r f; do echo $$f `grep -A1 "Total" ./wd/$$f/report/main_index.html | grep -oP '\d+ of \d+' | choose 0 2`; done < $(INPUTCSV) > noncrashing-results.csv 

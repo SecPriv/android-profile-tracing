@@ -1,0 +1,6 @@
+__pycache__/
+_sample_analysis_cache/
+_analysis_cache/
+_plotcache/
+all.zip
+old_analysis_cache/

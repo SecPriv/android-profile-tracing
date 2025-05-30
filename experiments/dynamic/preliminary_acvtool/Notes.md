@@ -1,0 +1,138 @@
+# Notes
+
+- input: 844
+    - success: 114
+    - errors: 730
+        - instrument errors: 201
+            - java error: 59
+            - python error: 98
+            - zipro: 1
+            - manifest error: 43
+        - install errors: 524
+            - INSTALL_PARSE_FAILED_NOT_APK: 15
+            - DUPLICATE_PERMISSION: 2
+            - SHARED_USER_INCOMPATIBLE: 1
+            - UPDATE_INCOMPATIBLE: 9
+            - INVALID_APK: 496
+            - FAILED_VERIFICATION_FAILURE: 1
+        - analysis errors: 5
+            - snapshot failed: 3
+            - cover-pickles failed: 2
+## Success:
+
+- https://play.google.com/store/apps/details?id=air.com.hypah.io.slither
+- https://play.google.com/store/apps/details?id=air.com.lunime.gachalife
+- https://play.google.com/store/apps/details?id=air.WR3DFree
+- https://play.google.com/store/apps/details?id=br.gov.caixa.fgts.trabalhador
+- https://play.google.com/store/apps/details?id=bubble.shooter.shooting.shoot.game
+- https://play.google.com/store/apps/details?id=cn.xender
+- https://play.google.com/store/apps/details?id=cn.xiaofengkj.fitpro
+- https://play.google.com/store/apps/details?id=com.adsk.sketchbook
+- https://play.google.com/store/apps/details?id=com.alphainventor.filemanager
+- https://play.google.com/store/apps/details?id=com.amazon.avod.thirdpartyclient
+- https://play.google.com/store/apps/details?id=com.amazon.kindle
+- https://play.google.com/store/apps/details?id=com.apple.movetoios
+- https://play.google.com/store/apps/details?id=com.apusapps.launcher
+- https://play.google.com/store/apps/details?id=com.audible.application
+- https://play.google.com/store/apps/details?id=com.azure.authenticator
+- https://play.google.com/store/apps/details?id=com.bible.kids
+- https://play.google.com/store/apps/details?id=com.bitstrips.imoji
+- https://play.google.com/store/apps/details?id=com.bl.critical.strike
+- https://play.google.com/store/apps/details?id=com.blockchainvault
+- https://play.google.com/store/apps/details?id=com.budgestudios.googleplay.BarbieDreamhouse
+- https://play.google.com/store/apps/details?id=com.calculator.hideu
+- https://play.google.com/store/apps/details?id=com.candyroom.clubcraft
+- https://play.google.com/store/apps/details?id=com.celltick.lockscreen
+- https://play.google.com/store/apps/details?id=com.cocoplay.fashion.style
+- https://play.google.com/store/apps/details?id=com.crazylabs.lady.bug
+- https://play.google.com/store/apps/details?id=com.cricbuzz.android
+- https://play.google.com/store/apps/details?id=com.ction.playergames
+- https://play.google.com/store/apps/details?id=com.cyworld.camera
+- https://play.google.com/store/apps/details?id=com.domobile.applockwatcher
+- https://play.google.com/store/apps/details?id=com.dsi.ant.plugins.antplus
+- https://play.google.com/store/apps/details?id=com.dsi.ant.service.socket
+- https://play.google.com/store/apps/details?id=com.dts.freefiremax
+- https://play.google.com/store/apps/details?id=com.fast.free.unblock.secure.vpn
+- https://play.google.com/store/apps/details?id=com.fast.free.unblock.thunder.vpn
+- https://play.google.com/store/apps/details?id=com.fingersoft.benjibananas
+- https://play.google.com/store/apps/details?id=com.fingersoft.hillclimb
+- https://play.google.com/store/apps/details?id=com.ForgeGames.SpecialForcesGroup2
+- https://play.google.com/store/apps/details?id=com.forthblue.pool
+- https://play.google.com/store/apps/details?id=com.gamedevltd.modernstrike
+- https://play.google.com/store/apps/details?id=com.gameloft.android.ANMP.GloftGGHM
+- https://play.google.com/store/apps/details?id=com.generagames.resistance
+- https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2
+- https://play.google.com/store/apps/details?id=com.google.android.apps.fitness
+- https://play.google.com/store/apps/details?id=com.google.android.apps.googleassistant
+- https://play.google.com/store/apps/details?id=com.google.android.apps.mapslite
+- https://play.google.com/store/apps/details?id=com.google.android.apps.navlite
+- https://play.google.com/store/apps/details?id=com.google.android.apps.paidtasks
+- https://play.google.com/store/apps/details?id=com.google.android.apps.translate
+- https://play.google.com/store/apps/details?id=com.google.android.ims
+- https://play.google.com/store/apps/details?id=com.google.ar.lens
+- https://play.google.com/store/apps/details?id=com.igg.android.lordsmobile
+- https://play.google.com/store/apps/details?id=com.imaginstudio.imagetools.pixellab
+- https://play.google.com/store/apps/details?id=com.imdb.mobile
+- https://play.google.com/store/apps/details?id=com.instagram.barcelona
+- https://play.google.com/store/apps/details?id=com.jrzheng.supervpnfree
+- https://play.google.com/store/apps/details?id=com.ketchapp.knifehit
+- https://play.google.com/store/apps/details?id=com.king.candycrushsaga
+- https://play.google.com/store/apps/details?id=com.lazygeniouz.saveit
+- https://play.google.com/store/apps/details?id=com.lookout
+- https://play.google.com/store/apps/details?id=com.loudtalks
+- https://play.google.com/store/apps/details?id=com.mcdonalds.mobileapp
+- https://play.google.com/store/apps/details?id=com.mediocre.smashhit
+- https://play.google.com/store/apps/details?id=com.melesta.coffeeshop
+- https://play.google.com/store/apps/details?id=com.melodis.midomiMusicIdentifier.freemium
+- https://play.google.com/store/apps/details?id=com.mi.android.globalFileexplorer
+- https://play.google.com/store/apps/details?id=com.microsoft.appmanager
+- https://play.google.com/store/apps/details?id=com.microsoft.office.outlook
+- https://play.google.com/store/apps/details?id=com.microsoft.xboxone.smartglass
+- https://play.google.com/store/apps/details?id=com.miui.huanji
+- https://play.google.com/store/apps/details?id=com.miui.videoplayer
+- https://play.google.com/store/apps/details?id=com.miui.weather2
+- https://play.google.com/store/apps/details?id=com.moonactive.coinmaster
+- https://play.google.com/store/apps/details?id=com.ne.hdv
+- https://play.google.com/store/apps/details?id=com.netqin.ps
+- https://play.google.com/store/apps/details?id=com.niksoftware.snapseed
+- https://play.google.com/store/apps/details?id=com.oppanagames.car.simulator
+- https://play.google.com/store/apps/details?id=com.pjmasks.moonlightheroes
+- https://play.google.com/store/apps/details?id=com.popularapp.periodcalendar
+- https://play.google.com/store/apps/details?id=com.psiphon3.subscription
+- https://play.google.com/store/apps/details?id=com.rsupport.mvagent
+- https://play.google.com/store/apps/details?id=com.samsung.android.app.watchmanager
+- https://play.google.com/store/apps/details?id=com.samsung.android.service.health
+- https://play.google.com/store/apps/details?id=com.sec.android.app.sbrowser
+- https://play.google.com/store/apps/details?id=com.sec.android.easyMover
+- https://play.google.com/store/apps/details?id=com.sec.app.samsungprintservice
+- https://play.google.com/store/apps/details?id=com.sec.penup
+- https://play.google.com/store/apps/details?id=com.sec.spp.push
+- https://play.google.com/store/apps/details?id=com.skype.raider
+- https://play.google.com/store/apps/details?id=com.socialnmobile.dictapps.notepad.color.note
+- https://play.google.com/store/apps/details?id=com.sofeh.android.musicstudio3
+- https://play.google.com/store/apps/details?id=com.superbinogo.jungleboyadventure
+- https://play.google.com/store/apps/details?id=com.talpa.hibrowser
+- https://play.google.com/store/apps/details?id=com.transsion.carlcare
+- https://play.google.com/store/apps/details?id=com.trivago
+- https://play.google.com/store/apps/details?id=com.truedevelopersstudio.automatictap.autoclicker
+- https://play.google.com/store/apps/details?id=com.valvesoftware.android.steam.community
+- https://play.google.com/store/apps/details?id=com.vivo.easyshare
+- https://play.google.com/store/apps/details?id=com.xiaomi.midrop
+- https://play.google.com/store/apps/details?id=com.youdao.hindict
+- https://play.google.com/store/apps/details?id=com.zakg.scaryteacher.hellgame
+- https://play.google.com/store/apps/details?id=com.zuuks.truck.simulator.euro
+- https://play.google.com/store/apps/details?id=de.axelspringer.yana.zeropage
+- https://play.google.com/store/apps/details?id=fb.video.downloader
+- https://play.google.com/store/apps/details?id=free.vpn.unblock.proxy.vpn.master.pro
+- https://play.google.com/store/apps/details?id=jpark.AOS5
+- https://play.google.com/store/apps/details?id=loseweight.weightloss.workout.fitness
+- https://play.google.com/store/apps/details?id=me.mycake
+- https://play.google.com/store/apps/details?id=me.pou.app
+- https://play.google.com/store/apps/details?id=net.sourceforge.opencamera
+- https://play.google.com/store/apps/details?id=org.zwanoo.android.speedtest
+- https://play.google.com/store/apps/details?id=paint.by.number.pixel.art.coloring.drawing.puzzle
+- https://play.google.com/store/apps/details?id=roll.unblock.ball.block.puzzle
+- https://play.google.com/store/apps/details?id=ru.zdevs.zarchiver
+- https://play.google.com/store/apps/details?id=sharefiles.sharemusic.shareapps.filetransfer
+
+

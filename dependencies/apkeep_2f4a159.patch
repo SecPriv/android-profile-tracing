@@ -1,0 +1,246 @@
+diff --git c/Cargo.lock w/Cargo.lock
+index eff02c3..81b621c 100644
+--- c/Cargo.lock
++++ w/Cargo.lock
+@@ -761,9 +761,7 @@ checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
+ 
+ [[package]]
+ name = "googleplay-protobuf"
+-version = "2.1.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "14f081ef352e2c0ada44c41c590e2df0555c99ff8cfa818244728a46f8aa781c"
++version = "3.0.0"
+ dependencies = [
+  "prost",
+  "prost-build",
+@@ -771,9 +769,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "gpapi"
+-version = "5.4.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "517030b33e92df94a13855f13d17f05e2b29ff597136ecf3f11524eab13ea3b4"
++version = "6.0.0"
+ dependencies = [
+  "bincode",
+  "bytes",
+diff --git c/Cargo.toml w/Cargo.toml
+index 20947a8..2370970 100644
+--- c/Cargo.toml
++++ w/Cargo.toml
+@@ -14,7 +14,7 @@ reqwest = { version = "0.12", features = ["stream"] }
+ futures-util = { version = "0.3", features = ["io"] }
+ regex = "1.11"
+ clap = { version = "4", features = ["derive"] }
+-gpapi = "5"
++gpapi = "6"
+ tokio-dl-stream-to-disk = { version = "1", features = ["sha256sum"] }
+ tempfile = "3"
+ dirs = "6"
+@@ -32,5 +32,9 @@ configparser = "3"
+ serde = { version = "1", features = ["derive"] }
+ indicatif = "0.17"
+ 
++[patch.crates-io]
++gpapi = { path = "../rs-google-play/gpapi" }
++googleplay-protobuf = { path = "../rs-google-play/googleplay-protobuf" }
++
+ [build-dependencies]
+ clap = { version = "4", features = ["derive"] }
+diff --git c/README.md w/README.md
+index ec8f395..1701399 100644
+--- c/README.md
++++ w/README.md
+@@ -1,3 +1,21 @@
++# fork of apkeep 
++
++- supports downloading dexmetadata files for cloud profiles
++- depends on [rs-google-apis-fork](https://gitlab.secpriv.tuwien.ac.at/secpriv/systemsec/code/rs-google-play-fork)
++    - local dev setup is funky
++- if you use this don't forget to `--release`
++
++```
++cargo run -- \
++		-a com.keylesspalace.tusky \
++		-d google-play \
++		-e somecoolmailthatstotallyreal@gmail.com \
++		-t 'aas_et...' \
++		-o split_apk=true,include_dexmetadata=true \
++		output_directory/
++```
++
++
+ <!--- `README.md` is automatically generated from the rustdoc using [`cargo-readme`](https://crates.io/crates/cargo-readme). -->
+ # `apkeep` - A command-line tool for downloading APK files from various sources
+ 
+diff --git c/USAGE-google-play.md w/USAGE-google-play.md
+index 75cba43..a862fab 100644
+--- c/USAGE-google-play.md
++++ w/USAGE-google-play.md
+@@ -2,7 +2,7 @@ To download directly from the Google Play Store, first you'll have to obtain an
+ 
+ - Opening the browser debugging console on `Network` tab
+ - Logging in
+-- If the "Google Terms of Services" pop up, click `I agree` (it can hang up on this step but it's not important)
++- If the "Google Terms of Services" pop up, click `I agree` (it can hang up on this step, but it's not important)
+ - Select the last request from `accounts.google.com` in the `Network` tab
+ - Select the `Cookies` tab of this request
+ - One of the response cookie is `oauth_token`
+@@ -26,6 +26,12 @@ This will use a default device configuration of `px_7a`, a timezone of `UTC`, an
+ apkeep -a com.instagram.android -d google-play -o device=ad_g3_pro -e 'someone@gmail.com' -t some_aas_token .
+ ```
+ 
++To specify a device profile from a custom device.properties file, also use the `-o` option:
++
++```shell
++apkeep -a com.instagram.android -d google-play -o device=custom_px_8,device_properties=./device.properties -e 'someone@gmail.com' -t some_aas_token .
++```
++
+ Available devices are specified [here](https://github.com/EFForg/rs-google-play/blob/master/gpapi/device.properties).
+ 
+ Likewise, a separate timezone or locale can also be specified:
+@@ -43,9 +49,12 @@ apkeep -a hk.easyvan.app.client -d google-play -o split_apk=true -e 'someone@gma
+ A full list of options:
+ 
+ * `device`: specify a device profile as described above
++* `device_properties`: filename to parse for custom device profiles
+ * `locale`: specify a locale
+ * `split_apk`: when set to `1` or `true`, attempts to download a [split APK](https://developer.android.com/studio/build/configure-apk-splits)
+ * `include_additional_files`: when set to `1` or `true`, attempts to download any [additional `obb` expansion files](https://developer.android.com/google/play/expansion-files) for the app
++* `include_dexmetadata`: when set to `1` or `true`, attempts to download the DexMetadata (dm) file for the app, which contains the apps' cloud profile.
++* `always_appid_dir`: always create a subdirectory named after the app-ID containing all downloaded files, even if only a single apk is downloaded.
+ 
+ If you prefer not to provide your credentials on the command line, you can specify them in a config file named `apkeep.ini`.  This config file may have to be created, and must be located in the user config directory under the subpath `apkeep`.  Usually on Linux systems this will be `~/.config/apkeep/apkeep.ini`.  In this file specify your email and/or AAS token:
+ 
+diff --git c/src/download_sources/google_play.rs w/src/download_sources/google_play.rs
+index d41be2e..233bef7 100644
+--- c/src/download_sources/google_play.rs
++++ w/src/download_sources/google_play.rs
+@@ -10,6 +10,16 @@ use tokio::time::{sleep, Duration as TokioDuration};
+ 
+ use crate::util::progress_bar::progress_wrapper;
+ 
++pub fn printerr(msg: String, mp_log: &MultiProgress) {
++    // hacky wrapper for mp_log.println as it does not print if not attached to a tty, such as when redirecting output to files for detailed debugging..
++    // TODO spin out to other store implementation as well as util
++    if mp_log.is_hidden() {
++        println!("{}", msg);
++    } else {
++        mp_log.println(msg).unwrap();
++    }
++}
++
+ pub async fn download_apps(
+     apps: Vec<(String, Option<String>)>,
+     parallel: usize,
+@@ -29,7 +39,18 @@ pub async fn download_apps(
+         Some(val) if val == "1" || val.to_lowercase() == "true" => true,
+         _ => false,
+     };
+-    let mut gpa = Gpapi::new(device, email);
++    let dexmetadata_if_available = match options.remove("include_dexmetadata") {
++        Some(val) if val == "1" || val.to_lowercase() == "true" => true,
++        _ => false,
++    };
++    let always_appid_dir = match options.remove("always_appid_dir") {
++        Some(val) if val == "1" || val.to_lowercase() == "true" => true,
++        _ => false,
++    };
++    let mut gpa = match options.remove("device_properties") {
++        Some(val) => Gpapi::with_extra_device_properties(device, email, Path::new(&val)),
++        _ => Gpapi::new(device, email),
++    };
+ 
+     if let Some(locale) = options.remove("locale") {
+         gpa.set_locale(locale);
+@@ -50,17 +71,17 @@ pub async fn download_apps(
+                                 std::process::exit(1);
+                             }
+                             println!("Google Play Terms of Service accepted.");
+-                        },
++                        }
+                         _ => {
+                             eprintln!("Could not accept Google Play Terms of Service");
+                             std::process::exit(1);
+-                        },
++                        }
+                     }
+                 } else {
+                     println!("{}\nPlease read the ToS here: https://play.google.com/about/play-terms/index.html\nIf you accept, please pass the --accept-tos flag.", err);
+                     std::process::exit(1);
+                 }
+-            },
++            }
+             _ => {
+                 eprintln!("Could not log in to Google Play.  Please check your credentials and try again later. {}", err);
+                 std::process::exit(1);
+@@ -85,30 +106,30 @@ pub async fn download_apps(
+                     if sleep_duration > 0 {
+                         sleep(TokioDuration::from_millis(sleep_duration)).await;
+                     }
+-                    match gpa.download(&app_id, None, split_apk, include_additional_files, Path::new(outpath), Some(&progress_wrapper(mp_dl1))).await {
++                    match gpa.download(&app_id, None, split_apk, dexmetadata_if_available, include_additional_files, Path::new(outpath), always_appid_dir, Some(&progress_wrapper(mp_dl1))).await {
+                         Ok(_) => mp_log.suspend(|| println!("{} downloaded successfully!", app_id)),
+                         Err(err) if matches!(err.kind(), GpapiErrorKind::FileExists) => {
+-                            mp_log.println(format!("File already exists for {}. Skipping...", app_id)).unwrap();
++                            printerr(format!("File already exists for {}. Skipping...", app_id), &mp_log);
+                         }
+                         Err(err) if matches!(err.kind(), GpapiErrorKind::DirectoryExists) => {
+-                            mp_log.println(format!("Split APK directory already exists for {}. Skipping...", app_id)).unwrap();
++                            printerr(format!("Split APK directory already exists for {}. Skipping...", app_id), &mp_log);
+                         }
+                         Err(err) if matches!(err.kind(), GpapiErrorKind::InvalidApp) => {
+-                            mp_log.println(format!("Invalid app response for {}. Skipping...", app_id)).unwrap();
++                            printerr(format!("Invalid app response for {}. Skipping...", app_id), &mp_log);
+                         }
+                         Err(err) if matches!(err.kind(), GpapiErrorKind::PermissionDenied) => {
+-                            mp_log.println(format!("Permission denied when attempting to write file for {}. Skipping...", app_id)).unwrap();
++                            printerr(format!("Permission denied when attempting to write file for {}. Skipping...", app_id), &mp_log);
+                         }
+                         Err(_) => {
+-                            mp_log.println(format!("An error has occurred attempting to download {}.  Retry #1...", app_id)).unwrap();
+-                            match gpa.download(&app_id, None, split_apk, include_additional_files, Path::new(outpath), Some(&progress_wrapper(mp_dl2))).await {
++                            printerr(format!("An error has occurred attempting to download {}.  Retry #1...", app_id), &mp_log);
++                            match gpa.download(&app_id, None, split_apk, dexmetadata_if_available, include_additional_files, Path::new(outpath), always_appid_dir, Some(&progress_wrapper(mp_dl2))).await {
+                                 Ok(_) => mp_log.suspend(|| println!("{} downloaded successfully!", app_id)),
+                                 Err(_) => {
+-                                    mp_log.println(format!("An error has occurred attempting to download {}.  Retry #2...", app_id)).unwrap();
+-                                    match gpa.download(&app_id, None, split_apk, include_additional_files, Path::new(outpath), Some(&progress_wrapper(mp_dl3))).await {
++                                    printerr(format!("An error has occurred attempting to download {}.  Retry #2...", app_id), &mp_log);
++                                    match gpa.download(&app_id, None, split_apk, dexmetadata_if_available, include_additional_files, Path::new(outpath), always_appid_dir, Some(&progress_wrapper(mp_dl3))).await {
+                                         Ok(_) => mp_log.suspend(|| println!("{} downloaded successfully!", app_id)),
+                                         Err(_) => {
+-                                            mp_log.println(format!("An error has occurred attempting to download {}. Skipping...", app_id)).unwrap();
++                                            printerr(format!("An error has occurred attempting to download {}. Skipping...", app_id), &mp_log);
+                                         }
+                                     }
+                                 }
+@@ -116,25 +137,21 @@ pub async fn download_apps(
+                         }
+                     }
+                 } else {
+-                    mp_log.println(format!("Specific versions can not be downloaded from Google Play ({}@{}). Skipping...", app_id, app_version.unwrap())).unwrap();
++                    printerr(format!("Specific versions can not be downloaded from Google Play ({}@{}). Skipping...", app_id, app_version.unwrap()), &mp_log);
+                 }
+             }
+         })
+     ).buffer_unordered(parallel).collect::<Vec<()>>().await;
+ }
+ 
+-pub async fn request_aas_token(
+-    email: &str,
+-    oauth_token: &str,
+-    mut options: HashMap<&str, &str>,
+-) {
++pub async fn request_aas_token(email: &str, oauth_token: &str, mut options: HashMap<&str, &str>) {
+     let device = options.remove("device").unwrap_or("px_7a");
+     let mut api = Gpapi::new(device, email);
+     match api.request_aas_token(oauth_token).await {
+         Ok(()) => {
+             let aas_token = api.get_aas_token().unwrap();
+             println!("AAS Token: {}", aas_token);
+-        },
++        }
+         Err(_) => {
+             println!("Error: was not able to retrieve AAS token with the provided OAuth token. Please provide new OAuth token and try again.");
+         }
