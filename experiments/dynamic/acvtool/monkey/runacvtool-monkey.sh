@@ -67,6 +67,9 @@ echo " >>> removing apks"
 /usr/bin/rm -rf ${WORKINGDIR}/${APP}/apktool
 /usr/bin/rm -rf ${WORKINGDIR}/${APP}/_tmp
 
+echo ">>> making sure wifi is on"
+adb shell scv wifi enable || true # don't abort if this throws an unknown error
+
 echo ">>> activating"
 acv activate -d ${DEVICEID} ${APP}
 # because acvtool start blocks, we call the activity manager ourselves
