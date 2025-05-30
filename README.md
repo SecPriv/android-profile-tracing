@@ -30,4 +30,3 @@ The `dependencies` folder contains external dependencies that are not automatica
     a. apply the acvtool patch
 4. run `aproftracer --help` to get an overview of functionality
 
-The downloader is in `experiments/daily_apk_dm_scrape/`.
