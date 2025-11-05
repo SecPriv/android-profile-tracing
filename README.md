@@ -2,6 +2,8 @@
 
 This is the repository for the ASE paper [Profile Coverage: Using Android Compilation Profiles to Evaluate Dynamic Testing](https://conf.researchr.org/details/ase-2025/ase-2025-papers/31/Profile-Coverage-Using-Android-Compilation-Profiles-to-Evaluate-Dynamic-Testing). You can find the originally submitted artifact under the [submitted-version tag](https://github.com/SecPriv/android-profile-tracing/tree/submitted-version).
 
+We are preparing to upstream our patches to [apkeep](https://github.com/EFForg/apkeep) to download cloud profiles easily. If you can't wait for it to be available, you can check out our [fork of apkeep](https://github.com/themoep/apkeep) and its dependency [rs-google-play](https://github.com/themoep/rs-google-play).
+
 ## Overview
 
 This repository contains two python projects in `src/`: 
@@ -36,4 +38,14 @@ The `dependencies` folder contains external dependencies that are not automatica
     a. run `git submodule update --init` to fetch the dependencies droidbot, acvtool, and fastbot.
     b. see the [dependencies/Readme.md] for further instructions to apply necessary patches 
 
+## Updates
 
+Installing an app that requires split-APKs can fail when instrumented with ACVTool because the resulting base.apk will have a different signature from the split-APKs. Thanks to Aleksandr Pilgun, who pointed this out and provided the following recommendation:
+
+```sh
+acv instrument base.apk
+acvpatcher -a split_config.arm64_v8a.apk
+acvpatcher -a split_config.xhdpi.apk
+adb uninstall <package>
+adb install-multiple *.apk
+```
